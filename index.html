@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monitoring Online Tests — Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      background: linear-gradient(to right, #f8f9fa, #dee2e6);
+      font-family: 'Poppins', sans-serif;
+    }
+    h2 {
+      font-weight: 700;
+      color: #0d6efd;
+    }
+    .card {
+      border-radius: 15px;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+      transition: transform 0.2s ease;
+    }
+    .card:hover {
+      transform: scale(1.01);
+    }
+    .fade-in {
+      animation: fadeIn 0.8s ease-in;
+    }
+    @keyframes fadeIn {
+      from {opacity: 0; transform: translateY(15px);}
+      to {opacity: 1; transform: translateY(0);}
+    }
+    img.thumb {
+      width: 45px;
+      height: 45px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    .btn-primary {
+      background: linear-gradient(45deg, #0d6efd, #6610f2);
+      border: none;
+    }
+  </style>
+</head>
+<body>
+<div class="container py-4">
+  <h2 class="text-center mb-4">📊 Monitoring Online Tests Dashboard</h2>
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <button id="addRecordBtn" class="btn btn-primary">➕ Add Record</button>
+    <button id="loadDemo" class="btn btn-outline-secondary">💾 Load Demo Data</button>
+  </div>
+
+  <div class="row g-4">
+    <div class="col-lg-8 fade-in">
+      <div class="card p-3">
+        <h5 class="mb-3">🧾 Student Test Records</h5>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle" id="recordsTable">
+            <thead class="table-primary">
+              <tr>
+                <th>Photo</th>
+                <th>Student</th>
+                <th>Batch</th>
+                <th>Test</th>
+                <th>Score</th>
+                <th>Time (min)</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4 fade-in">
+      <div class="card p-3 mb-3">
+        <h6>📈 Average Scores</h6>
+        <canvas id="scoreChart" height="180"></canvas>
+      </div>
+      <div class="card p-3">
+        <h6>⏱️ Average Time</h6>
+        <canvas id="timeChart" height="180"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div class="modal fade" id="recordModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title" id="recordModalLabel">Add Record</h5>
+        <button class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <form id="recordForm">
+          <div class="mb-2">
+            <label>Student Name</label>
+            <input type="text" name="student" class="form-control" required>
+          </div>
+          <div class="mb-2">
+            <label>Batch</label>
+            <input type="text" name="batch" class="form-control" required>
+          </div>
+          <div class="mb-2">
+            <label>Test Name</label>
+            <input type="text" name="test" class="form-control" required>
+          </div>
+          <div class="mb-2">
+            <label>Score</label>
+            <input type="number" name="score" class="form-control" required>
+          </div>
+          <div class="mb-2">
+            <label>Time (minutes)</label>
+            <input type="number" name="time" class="form-control" required>
+          </div>
+          <div class="mb-2">
+            <label>Status</label>
+            <select name="status" class="form-select">
+              <option>Pass</option>
+              <option>Fail</option>
+            </select>
+          </div>
+          <div class="mb-2">
+            <label>Photo URL</label>
+            <input type="text" name="photo" class="form-control" placeholder="https://...">
+          </div>
+        </form>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" id="saveRecordBtn">Save Record</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  const addBtn = document.getElementById("addRecordBtn");
+  const saveBtn = document.getElementById("saveRecordBtn");
+  const loadDemoBtn = document.getElementById("loadDemo");
+  const form = document.getElementById("recordForm");
+  const tableBody = document.querySelector("#recordsTable tbody");
+  const modalEl = document.getElementById("recordModal");
+
+  let records = JSON.parse(localStorage.getItem("testRecords") || "[]");
+  let editIndex = null;
+  let scoreChart, timeChart;
+
+  const scoreCtx = document.getElementById("scoreChart");
+  const timeCtx = document.getElementById("timeChart");
+
+  const refreshCharts = () => {
+    const tests = [...new Set(records.map(r => r.test))];
+    const avgScores = tests.map(t => {
+      const data = records.filter(r => r.test === t).map(r => +r.score);
+      return data.reduce((a,b)=>a+b,0)/data.length;
+    });
+    const avgTimes = tests.map(t => {
+      const data = records.filter(r => r.test === t).map(r => +r.time);
+      return data.reduce((a,b)=>a+b,0)/data.length;
+    });
+
+    if (scoreChart) scoreChart.destroy();
+    if (timeChart) timeChart.destroy();
+
+    scoreChart = new Chart(scoreCtx, {
+      type: 'bar',
+      data: {
+        labels: tests,
+        datasets: [{
+          label: 'Average Score',
+          data: avgScores,
+          backgroundColor: '#0d6efd'
+        }]
+      }
+    });
+
+    timeChart = new Chart(timeCtx, {
+      type: 'line',
+      data: {
+        labels: tests,
+        datasets: [{
+          label: 'Average Time (min)',
+          data: avgTimes,
+          borderColor: '#198754',
+          fill: false
+        }]
+      }
+    });
+  };
+
+  const refreshTable = () => {
+    tableBody.innerHTML = "";
+    records.forEach((r, i) => {
+      tableBody.innerHTML += `
+        <tr>
+          <td><img src="${r.photo || 'https://via.placeholder.com/45'}" class="thumb"></td>
+          <td>${r.student}</td>
+          <td>${r.batch}</td>
+          <td>${r.test}</td>
+          <td>${r.score}</td>
+          <td>${r.time}</td>
+          <td><span class="badge ${r.status==='Pass'?'bg-success':'bg-danger'}">${r.status}</span></td>
+          <td>
+            <button class="btn btn-sm btn-primary editBtn" data-index="${i}">Edit</button>
+            <button class="btn btn-sm btn-danger deleteBtn" data-index="${i}">Delete</button>
+          </td>
+        </tr>`;
+    });
+    localStorage.setItem("testRecords", JSON.stringify(records));
+    refreshCharts();
+  };
+
+  refreshTable();
+
+  addBtn.addEventListener("click", () => {
+    form.reset();
+    editIndex = null;
+    document.getElementById("recordModalLabel").innerText = "Add Record";
+    new bootstrap.Modal(modalEl).show();
+  });
+
+  saveBtn.addEventListener("click", () => {
+    const record = {
+      student: form.student.value.trim(),
+      batch: form.batch.value.trim(),
+      test: form.test.value.trim(),
+      score: form.score.value.trim(),
+      time: form.time.value.trim(),
+      status: form.status.value.trim(),
+      photo: form.photo.value.trim(),
+    };
+    if (!record.student || !record.batch || !record.test) {
+      alert("Please fill all required fields!");
+      return;
+    }
+    if (editIndex === null) records.push(record);
+    else records[editIndex] = record;
+
+    refreshTable();
+    bootstrap.Modal.getInstance(modalEl).hide();
+  });
+
+  document.addEventListener("click", (e) => {
+    if (e.target.classList.contains("editBtn")) {
+      editIndex = e.target.dataset.index;
+      const r = records[editIndex];
+      for (const key in r) form[key].value = r[key];
+      document.getElementById("recordModalLabel").innerText = "Edit Record";
+      new bootstrap.Modal(modalEl).show();
+    }
+    if (e.target.classList.contains("deleteBtn")) {
+      if (confirm("Delete this record?")) {
+        records.splice(e.target.dataset.index, 1);
+        refreshTable();
+      }
+    }
+  });
+
+  loadDemoBtn.addEventListener("click", () => {
+    records = [
+      {student:"Aarav",batch:"B1",test:"Math",score:88,time:40,status:"Pass",photo:"https://i.pravatar.cc/45?img=1"},
+      {student:"Riya",batch:"B1",test:"Science",score:75,time:55,status:"Pass",photo:"https://i.pravatar.cc/45?img=2"},
+      {student:"Kabir",batch:"B2",test:"English",score:60,time:50,status:"Pass",photo:"https://i.pravatar.cc/45?img=3"},
+      {student:"Neha",batch:"B3",test:"Math",score:42,time:70,status:"Fail",photo:"https://i.pravatar.cc/45?img=4"}
+    ];
+    refreshTable();
+  });
+});
+</script>
+</body>
+</html>
